@@ -86,8 +86,15 @@ ShellRoot {
         property var listArea: parking
         property var acted: []
         property var menus: []
+        property string path: "/tmp"
+        property string searchBase: ""
+        function selectedIndices() { return [0, 1] }
+        function rowFor(index) { return index === 0 ? { n: "a.txt" } : index === 1 ? { n: "b.txt" } : null }
+        function join(base, name) { return base + "/" + name }
         function act(action) { acted.push(action) }
-        function performMenu(action, menuId, paths) { menus.push(action + ":" + menuId + ":" + (paths === null)) }
+        function performMenu(action, menuId, paths) {
+            menus.push(action + ":" + menuId + ":" + (paths === null ? "null" : paths.join("|")))
+        }
     }
 
     Connections {
@@ -172,7 +179,7 @@ ShellRoot {
         wheel.openAt(Qt.point(300, 250))
         shell.clickPetal(3)
         shell.check("a petal click closes the wheel", wheel.opened, false)
-        shell.check("Shelf goes through the pane's menu", mockPane.menus.join(","), "addToShelf:0:true")
+        shell.check("Shelf goes through the pane's menu with every selected path", mockPane.menus.join(","), "addToShelf:0:/tmp/a.txt|/tmp/b.txt")
         shell.check("and reports its own id", shell.chosenId, "shelf")
 
         wheel.openAt(Qt.point(300, 250))

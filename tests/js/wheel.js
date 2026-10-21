@@ -10,8 +10,15 @@ function pane() {
     return {
         acted: [],
         menus: [],
+        path: "/tmp",
+        searchBase: "",
+        selectedIndices: function () { return [0, 1] },
+        rowFor: function (index) { return index === 0 ? { n: "a.txt" } : index === 1 ? { n: "b.txt" } : null },
+        join: function (base, name) { return base + "/" + name },
         act: function (action) { this.acted.push(action) },
-        performMenu: function (action, menuId, paths) { this.menus.push(action + ":" + menuId + ":" + (paths === null)) }
+        performMenu: function (action, menuId, paths) {
+            this.menus.push(action + ":" + menuId + ":" + (paths === null ? "null" : paths.join("|")))
+        }
     }
 }
 
@@ -62,7 +69,7 @@ function run(check) {
           "copy,moveTo,copyPath,addToShelf,compress:zip,openTerminal")
     check("copy and the other four go through act()", sink.acted.join(","),
           "copy,moveTo,copyPath,compress:zip,openTerminal")
-    check("Shelf goes through the menu's own action", sink.menus.join(","), "addToShelf:0:true")
+    check("Shelf goes through the menu's own action with every selected path", sink.menus.join(","), "addToShelf:0:/tmp/a.txt|/tmp/b.txt")
     check("a missing sector runs nothing", Wheel.run(-1, sink), "")
     check("and a missing pane runs nothing", Wheel.run(0, null), "")
 }

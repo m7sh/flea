@@ -1,5 +1,7 @@
 .pragma library
 
+.import "Ops.js" as Ops
+
 // Tangerine's drag wheel, ported to Flea's own actions. The geometry is the landing page's
 // (assets/home-*.js): one annulus of equal petals, sector 0 at the top, clockwise, a small angular
 // gap between neighbours, and rounded corners cut into the SVG path rather than into the hit test.
@@ -111,7 +113,9 @@ function run(index, pane) {
     var action = ACTIONS[index]
     if (!action || !pane) return ""
     if (action.id === "shelf") {
-        pane.performMenu("addToShelf", 0, null)
+        // The shelf is a client-side action, so the menu cannot resolve its own paths: hand it the
+        // same selection Ops.targetPaths builds for the menu's compare row.
+        pane.performMenu("addToShelf", 0, Ops.targetPaths(pane, Ops.targetIndices(pane)))
         return "addToShelf"
     }
     var route = action.id === "move" ? "moveTo"

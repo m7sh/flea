@@ -6,6 +6,8 @@ function near(a, b) {
     return Math.abs(a - b) < 0.0001
 }
 
+var lastConvert = null
+
 function pane() {
     return {
         acted: [],
@@ -13,12 +15,16 @@ function pane() {
         rows: [{ n: "sample.jpg", d: false }],
         cursorIndex: 0,
         path: "/home/user",
+        searchBase: "",
+        selectedIndices: function () { return [] },
         rowFor: function (idx) { return this.rows[idx] },
         join: function (dir, file) { return dir + "/" + file },
         act: function (action) { this.acted.push(action) },
         sheetMenuAction: function (action) { this.sheets.push(action) },
         backend: {
-            convertImage: function () {}
+            convertImage: function (path, dest, strip, menuId, reqId, check) {
+                lastConvert = { path: path, dest: dest }
+            }
         }
     }
 }
@@ -73,12 +79,35 @@ function run(check) {
     var mp3Formats = Wheel.conversionFormats("mp3")
     check("mp3 converts to Tangerine audio targets",
           mp3Formats.join(","), "m4a,wav,flac,ogg,opus,aiff,wma")
+    var pdfFormats = Wheel.conversionFormats("pdf")
+    check("pdf converts to supported image targets only",
+          pdfFormats.join(","), "jpg,png")
+    check("unsupported document formats return empty targets",
+          Wheel.conversionFormats("docx").join(","), "")
+    check("empty extension returns empty targets",
+          Wheel.conversionFormats("").join(","), "")
 
     // Sub-entries generation
     var p = pane()
     var subItems = Wheel.itemsFor("convert", p)
     check("convert mode returns format petals for active file", subItems.length, 7)
     check("first sub-entry is PNG with image glyph", subItems[0].label + ":" + subItems[0].glyph, "PNG:image")
+
+    var dirPane = pane()
+    dirPane.rows = [{ n: "subfolder", d: true }]
+    check("directory returns no conversion format petals", Wheel.itemsFor("convert", dirPane).length, 0)
+
+    var multiPane = pane()
+    multiPane.selectedIndices = function () { return [0, 1] }
+    check("multiple selected rows hide convert action from root wheel", Wheel.itemsFor("actions", multiPane).length, 6)
+    check("multiple selected rows return empty format petals", Wheel.itemsFor("convert", multiPane).length, 0)
+
+    var singleSelPane = pane()
+    singleSelPane.rows = [{ n: "first.jpg", d: false }, { n: "second.mp3", d: false }]
+    singleSelPane.cursorIndex = 0
+    singleSelPane.selectedIndices = function () { return [1] }
+    var selSub = Wheel.itemsFor("convert", singleSelPane)
+    check("single selected row targets selection over cursor", selSub.length > 0 && selSub[0].format === "m4a", true)
 
     var sink = pane()
     var routes = []
@@ -91,6 +120,33 @@ function run(check) {
     check("Shelf goes through the menu's selection snapshot", sink.sheets.join(","), "addToShelf")
     check("conversion route dispatches convert:<format>",
           Wheel.run({ id: "convert:png", format: "png" }, sink), "convert:png")
+    check("convertImage receives source path and dest with stem",
+          lastConvert ? lastConvert.path + " -> " + lastConvert.dest : "",
+          "/home/user/sample.jpg -> /home/user/sample (converted).png")
+
+    var dotDirPane = pane()
+    dotDirPane.path = "/home/user/my.photos"
+    dotDirPane.rows = [{ n: "img.jpg", d: false }]
+    Wheel.run({ id: "convert:webp", format: "webp" }, dotDirPane)
+    check("destination removes extension from final path segment only",
+          lastConvert ? lastConvert.dest : "",
+          "/home/user/my.photos/img (converted).webp")
+
+    var dotFilePane = pane()
+    dotFilePane.rows = [{ n: ".profile", d: false }]
+    Wheel.run({ id: "convert:png", format: "png" }, dotFilePane)
+    check("destination preserves dotfile name without stripping leading dot",
+          lastConvert ? lastConvert.dest : "",
+          "/home/user/.profile (converted).png")
+
+    var searchPane = pane()
+    searchPane.searchBase = "/home/user/Work"
+    searchPane.rows = [{ n: "deep/nested.png", d: false }]
+    Wheel.run({ id: "convert:jpg", format: "jpg" }, searchPane)
+    check("search-result row resolves against searchBase",
+          lastConvert ? lastConvert.path : "",
+          "/home/user/Work/deep/nested.png")
+
     check("a missing sector runs nothing", Wheel.run(-1, sink), "")
     check("and a missing pane runs nothing", Wheel.run(0, null), "")
 }

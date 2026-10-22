@@ -1,4 +1,5 @@
 .pragma library
+.import "Search.js" as Search
 
 // Tangerine's drag wheel, ported to Flea with dynamic format conversion sub-entries.
 // The geometry is the landing page's (assets/home-*.js): one annulus of equal petals,
@@ -13,15 +14,12 @@ var GEOMETRY = {
     labelInner: 40
 }
 
-// Tangerine's format categories and conversion targets, extracted from Tangerine's production bundle.
+// Supported format categories and conversion targets.
+// Magick handles images and PDF; FFmpeg handles audio and video.
 var IMAGES = ["jpg", "jpeg", "png", "webp", "heic", "tiff", "svg", "avif", "bmp"]
 var IMAGE_TARGETS = ["jpg", "png", "webp", "heic", "tiff", "avif", "bmp", "pdf"]
 var AUDIO = ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"]
 var VIDEO = ["mp4", "mov", "mkv", "webm", "avi", "wmv"]
-var SUBTITLES = ["srt", "vtt"]
-var DOCS = ["docx", "pages", "md", "rtf", "rtfd", "textClipping"]
-var SPREADSHEETS = ["xlsx", "xls", "ods", "csv", "tsv"]
-var DOC_TARGETS = ["docx", "pages", "pdf", "txt", "md", "html", "epub", "png", "jpg"]
 var INPUT_ONLY = ["rar", "ppt", "xls", "rtf", "rtfd", "textClipping"]
 
 // The seven root actions: six file actions plus Convert, which opens format sub-entries.
@@ -53,14 +51,7 @@ function conversionFormats(ext) {
     else if (AUDIO.indexOf(e) >= 0) t = AUDIO
     else if (VIDEO.indexOf(e) >= 0) t = VIDEO.concat(["gif", "mp3"])
     else if (e === "gif") t = VIDEO
-    else if (e === "pdf") t = ["docx", "pages", "pptx", "xlsx", "jpg", "png", "epub", "txt", "md"]
-    else if (e === "ppt" || e === "pptx") t = ["pdf", "jpg", "png"]
-    else if (SPREADSHEETS.indexOf(e) >= 0) t = SPREADSHEETS.concat(["pdf"])
-    else if (DOCS.indexOf(e) >= 0) t = DOC_TARGETS
-    else if (e === "epub") t = ["pdf", "docx", "pages", "txt", "md", "html"]
-    else if (e === "txt") t = ["docx", "pages", "pdf", "md", "html", "epub", "jpg", "png"]
-    else if (SUBTITLES.indexOf(e) >= 0) t = SUBTITLES.concat(["txt"])
-    else if (["zip", "tar", "gz", "rar"].indexOf(e) >= 0) t = ["zip", "tar", "gz"]
+    else if (e === "pdf") t = ["jpg", "png"]
     else return []
 
     var res = []
@@ -77,9 +68,7 @@ var LABELS = {
     avif: "AVIF", bmp: "BMP", pdf: "PDF", mp3: "MP3", m4a: "M4A",
     wav: "WAV", flac: "FLAC", ogg: "OGG", opus: "Opus", aiff: "AIFF",
     wma: "WMA", mp4: "MP4", mov: "MOV", mkv: "MKV", webm: "WebM",
-    avi: "AVI", wmv: "WMV", gif: "GIF", docx: "DOCX", pages: "Pages",
-    pptx: "PPTX", xlsx: "XLSX", epub: "EPUB", txt: "TXT", md: "Markdown",
-    html: "HTML", srt: "SRT", vtt: "VTT", zip: "ZIP", tar: "TAR", gz: "GZIP"
+    avi: "AVI", wmv: "WMV", gif: "GIF"
 }
 
 function formatLabel(fmt) {
@@ -90,13 +79,21 @@ function formatGlyph(fmt) {
     if (IMAGES.indexOf(fmt) >= 0) return "image"
     if (AUDIO.indexOf(fmt) >= 0) return "music"
     if (VIDEO.indexOf(fmt) >= 0 || fmt === "gif") return "film"
-    if (["zip", "tar", "gz", "rar"].indexOf(fmt) >= 0) return "archive"
     return "file-text"
+}
+
+function conversionTargetIndex(pane) {
+    if (!pane) return -1
+    var picked = pane.selectedIndices ? pane.selectedIndices() : []
+    if (picked.length > 1) return -1
+    if (picked.length === 1) return picked[0]
+    return pane.cursorIndex !== undefined ? pane.cursorIndex : -1
 }
 
 function activeExtension(pane) {
     if (!pane || !pane.rows) return ""
-    var idx = pane.cursorIndex !== undefined ? pane.cursorIndex : 0
+    var idx = conversionTargetIndex(pane)
+    if (idx < 0) return ""
     var row = pane.rowFor ? pane.rowFor(idx) : null
     if (!row || row.d) return ""
     return extensionOf(row.n)
@@ -104,10 +101,9 @@ function activeExtension(pane) {
 
 function itemsFor(mode, pane) {
     if (mode === "convert") {
+        if (!pane || conversionTargetIndex(pane) < 0) return []
         var ext = activeExtension(pane)
         var fmts = conversionFormats(ext)
-        if (fmts.length === 0)
-            fmts = ["png", "jpg", "webp", "pdf"]
         var items = []
         for (var i = 0; i < fmts.length; i++) {
             var f = fmts[i]
@@ -115,12 +111,20 @@ function itemsFor(mode, pane) {
                 id: "convert:" + f,
                 format: f,
                 label: formatLabel(f),
-                glyph: formatGlyph(f)
+                icon: formatGlyph(f),
+                glyph: formatGlyph(f),
+                category: "convert"
             })
         }
         return items
     }
-    return ACTIONS
+    if (!pane) return ACTIONS
+    var actions = []
+    for (var j = 0; j < ACTIONS.length; j++) {
+        if (ACTIONS[j].id !== "convert" || conversionTargetIndex(pane) >= 0)
+            actions.push(ACTIONS[j])
+    }
+    return actions
 }
 
 // The middle of a sector, in math coordinates: positive y is up, and sector 0 is at the top.
@@ -222,9 +226,14 @@ function run(actionOrIndex, pane) {
     }
     if (action.id && action.id.indexOf("convert:") === 0) {
         var format = action.format || action.id.substring(8)
-        var row = pane.rowFor ? pane.rowFor(pane.cursorIndex) : null
-        var fullPath = row && row.n ? (pane.join ? pane.join(pane.path, row.n) : row.n) : ""
-        var dest = fullPath ? fullPath.replace(/(?:\.[^.]+)?$/, " (converted)." + format) : ""
+        var index = conversionTargetIndex(pane)
+        var row = index >= 0 && pane.rowFor ? pane.rowFor(index) : null
+        var base = Search.baseOf ? Search.baseOf(pane) : (pane.searchBase || pane.path)
+        var fullPath = row && row.n ? (pane.join ? pane.join(base, row.n) : row.n) : ""
+        var slash = fullPath.lastIndexOf("/")
+        var dot = fullPath.lastIndexOf(".")
+        var stem = dot > slash + 1 ? fullPath.substring(0, dot) : fullPath
+        var dest = fullPath ? stem + " (converted)." + format : ""
         if (fullPath && pane.backend && pane.backend.convertImage) {
             pane.backend.convertImage(fullPath, dest, false, 0, 0, false)
         }

@@ -16,7 +16,7 @@ pub fn available() -> bool {
     is_on_path(MAGICK) || is_on_path(FFMPEG)
 }
 
-fn is_media(path: &Path) -> bool {
+pub fn is_media(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         matches!(
             ext.to_ascii_lowercase().as_str(),
@@ -25,6 +25,14 @@ fn is_media(path: &Path) -> bool {
         )
     } else {
         false
+    }
+}
+
+pub fn available_for(input: &Path, dest: &Path) -> bool {
+    if is_media(input) || is_media(dest) {
+        is_on_path(FFMPEG)
+    } else {
+        is_on_path(MAGICK)
     }
 }
 
@@ -70,5 +78,13 @@ mod tests {
             let audio = argv(Path::new("/x/a.mp4"), Path::new("/x/a.mp3"), false);
             assert_eq!(audio, vec!["ffmpeg", "-y", "-i", "/x/a.mp4", "/x/a.mp3"]);
         }
+    }
+
+    #[test]
+    fn format_aware_availability_requires_ffmpeg_for_media_and_magick_for_images() {
+        assert_eq!(available_for(Path::new("/x/a.mov"), Path::new("/x/a.mp4")), is_on_path(FFMPEG));
+        assert_eq!(available_for(Path::new("/x/a.mp4"), Path::new("/x/a.mp3")), is_on_path(FFMPEG));
+        assert_eq!(available_for(Path::new("/x/a.heic"), Path::new("/x/a.jpg")), is_on_path(MAGICK));
+        assert_eq!(available_for(Path::new("/x/a.pdf"), Path::new("/x/a.png")), is_on_path(MAGICK));
     }
 }

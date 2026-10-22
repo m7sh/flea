@@ -96,6 +96,7 @@ function run(check) {
     var dirPane = pane()
     dirPane.rows = [{ n: "subfolder", d: true }]
     check("directory returns no conversion format petals", Wheel.itemsFor("convert", dirPane).length, 0)
+    check("directory hides convert action from root wheel", Wheel.itemsFor("actions", dirPane).length, 6)
 
     var multiPane = pane()
     multiPane.selectedIndices = function () { return [0, 1] }

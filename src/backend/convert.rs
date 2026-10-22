@@ -39,13 +39,18 @@ pub fn available_for(input: &Path, dest: &Path) -> bool {
 // Magick reads the codec off dest's extension; FFmpeg infers the container and codec similarly.
 pub fn argv(input: &Path, dest: &Path, strip: bool) -> Vec<String> {
     if (is_media(input) || is_media(dest)) && is_on_path(FFMPEG) {
-        vec![
+        let mut a = vec![
             FFMPEG.to_string(),
             "-y".to_string(),
             "-i".to_string(),
             input.to_string_lossy().to_string(),
-            dest.to_string_lossy().to_string(),
-        ]
+        ];
+        if strip {
+            a.push("-map_metadata".to_string());
+            a.push("-1".to_string());
+        }
+        a.push(dest.to_string_lossy().to_string());
+        a
     } else {
         let mut a = vec![MAGICK.to_string(), input.to_string_lossy().to_string()];
         if strip {
@@ -77,6 +82,8 @@ mod tests {
             assert_eq!(media, vec!["ffmpeg", "-y", "-i", "/x/a.mov", "/x/a.mp4"]);
             let audio = argv(Path::new("/x/a.mp4"), Path::new("/x/a.mp3"), false);
             assert_eq!(audio, vec!["ffmpeg", "-y", "-i", "/x/a.mp4", "/x/a.mp3"]);
+            let stripped = argv(Path::new("/x/a.mov"), Path::new("/x/a.mp4"), true);
+            assert_eq!(stripped, vec!["ffmpeg", "-y", "-i", "/x/a.mov", "-map_metadata", "-1", "/x/a.mp4"]);
         }
     }
 

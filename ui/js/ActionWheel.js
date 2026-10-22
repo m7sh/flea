@@ -120,8 +120,9 @@ function itemsFor(mode, pane) {
     }
     if (!pane) return ACTIONS
     var actions = []
+    var canConvert = conversionTargetIndex(pane) >= 0 && itemsFor("convert", pane).length > 0
     for (var j = 0; j < ACTIONS.length; j++) {
-        if (ACTIONS[j].id !== "convert" || conversionTargetIndex(pane) >= 0)
+        if (ACTIONS[j].id !== "convert" || canConvert)
             actions.push(ACTIONS[j])
     }
     return actions

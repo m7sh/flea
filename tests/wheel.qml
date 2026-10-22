@@ -6,9 +6,9 @@ import Quickshell
 import "flea" as Flea
 import "flea/js/ActionWheel.js" as Wheel
 
-// tests/wheel.sh's harness: the real ui/ActionWheel.qml over a stub pane. It checks the six
-// petals the Tangerine geometry draws, the annulus hit test, every key the wheel owns, the
-// pointer's own click, the focus it borrows and gives back, and the routes it hands the pane.
+// tests/wheel.sh's harness: the real ui/ActionWheel.qml over a stub pane. It checks the root
+// actions, the Tangerine format conversion sub-entries, the annulus hit test, keys, pointer
+// clicks, focus restore and routes handed to the pane; offscreen.
 ShellRoot {
     id: shell
 
@@ -50,13 +50,14 @@ ShellRoot {
     function pathOf(petal) {
         return petal.outlinePath || ""
     }
-    function pointAt(index) {
+    function pointAt(index, count) {
+        var n = count || wheel.actionCount
         var radius = (Wheel.GEOMETRY.inner + Wheel.GEOMETRY.outer) / 2
-        return Wheel.pointAt(radius, Wheel.angleFor(index, Wheel.ACTIONS.length))
+        return Wheel.pointAt(radius, Wheel.angleFor(index, n))
     }
     function clickPetal(index) {
         var dial = shell.oneNamed(wheel, "actionWheelDial")
-        var point = shell.pointAt(index)
+        var point = shell.pointAt(index, wheel.actionCount)
         keys.mouseClick(dial, wheel.backdrop + point.x, wheel.backdrop + point.y, Qt.LeftButton, Qt.NoModifier, -1)
     }
 
@@ -86,8 +87,16 @@ ShellRoot {
         property var listArea: parking
         property var acted: []
         property var sheets: []
+        property var rows: [{ n: "sample.jpg", d: false }]
+        property int cursorIndex: 0
+        property string path: "/home/user"
+        function rowFor(idx) { return rows[idx] }
+        function join(dir, file) { return dir + "/" + file }
         function act(action) { acted.push(action) }
         function sheetMenuAction(action) { sheets.push(action) }
+        property var backend: QtObject {
+            function convertImage(path, dest, strip, menuId, requestId, check) {}
+        }
     }
 
     Connections {
@@ -104,7 +113,7 @@ ShellRoot {
     }
 
     function run() {
-        shell.check("the wheel owns six actions", wheel.actionCount, 6)
+        shell.check("the wheel owns root actions including convert", wheel.actionCount, 7)
         shell.check("Tangerine's inner rim", wheel.inner, 48.64)
         shell.check("Tangerine's outer rim", wheel.outer, 119.52)
         shell.check("Tangerine's backdrop", wheel.backdrop, 125.92)
@@ -113,8 +122,8 @@ ShellRoot {
 
         var petals = shell.allNamed(wheel, "actionWheelPetal")
         var captions = shell.allNamed(wheel, "actionWheelCaption")
-        shell.check("one shape per action", petals.length, 6)
-        shell.check("one caption per action", captions.length, 6)
+        shell.check("one shape per action", petals.length, 7)
+        shell.check("one caption per action", captions.length, 7)
         shell.check("the hub is drawn once", shell.allNamed(wheel, "actionWheelHub").length, 1)
         var paths = petals.map(shell.pathOf)
         var broken = paths.filter(function (path) {
@@ -134,7 +143,7 @@ ShellRoot {
 
         var misses = []
         for (var i = 0; i < wheel.actionCount; i++) {
-            var point = shell.pointAt(i)
+            var point = shell.pointAt(i, wheel.actionCount)
             wheel.pointerAt(wheel.backdrop + point.x, wheel.backdrop + point.y)
             if (wheel.highlighted !== i) misses.push(i)
         }
@@ -159,7 +168,7 @@ ShellRoot {
         keys.keyClick(Qt.Key_Left, Qt.NoModifier, -1)
         shell.check("Left steps back", wheel.highlighted, 0)
         keys.keyClick(Qt.Key_Left, Qt.NoModifier, -1)
-        shell.check("and wraps to the last petal", wheel.highlighted, 5)
+        shell.check("and wraps to the last petal", wheel.highlighted, 6)
         keys.keyClick(Qt.Key_Return, Qt.NoModifier, -1)
         shell.check("Enter runs the lit petal", mockPane.acted.join(","), "openTerminal")
         shell.check("the wheel closes on a choice", wheel.opened, false)
@@ -174,6 +183,25 @@ ShellRoot {
         shell.check("a petal click closes the wheel", wheel.opened, false)
         shell.check("Shelf goes through the pane's menu snapshot", mockPane.sheets.join(","), "addToShelf")
         shell.check("and reports its own id", shell.chosenId, "shelf")
+
+        // Sub-entries: clicking Convert petal opens format sub-wheel
+        wheel.openAt(Qt.point(300, 250))
+        shell.clickPetal(5)
+        shell.check("clicking Convert switches to convert mode", wheel.mode, "convert")
+        shell.check("wheel remains opened in sub-mode", wheel.opened, true)
+        shell.check("sub-mode populates conversion format petals", wheel.actionCount, 7)
+        keys.keyClick(Qt.Key_Escape, Qt.NoModifier, -1)
+        shell.check("Escape in sub-mode returns to root actions", wheel.mode, "actions")
+        shell.check("wheel stays open after returning to root actions", wheel.opened, true)
+        keys.keyClick(Qt.Key_Escape, Qt.NoModifier, -1)
+        shell.check("second Escape closes wheel", wheel.opened, false)
+
+        // Opening directly in convert mode
+        wheel.openAt(Qt.point(300, 250), "convert")
+        shell.check("openAt accepts convert initial mode", wheel.mode, "convert")
+        shell.clickPetal(0)
+        shell.check("choosing format petal closes wheel", wheel.opened, false)
+        shell.check("reports convert format choice", shell.chosenId, "convert:png")
 
         wheel.openAt(Qt.point(300, 250))
         keys.mouseClick(wheel, wheel.wheelX, wheel.wheelY, Qt.LeftButton, Qt.NoModifier, -1)

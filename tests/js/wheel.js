@@ -1,7 +1,7 @@
 .import "../../ui/js/ActionWheel.js" as Wheel
 
-// Tangerine's drag wheel is one annulus split into equal sectors. These checks hold the ported
-// geometry, its gap, and the six routes to the same shape the landing page uses, without a Pane.
+// Tangerine's drag wheel is an annulus split into equal sectors. These checks hold the ported
+// geometry, its gap, root actions, format conversion sub-entries, and routes without a Pane.
 function near(a, b) {
     return Math.abs(a - b) < 0.0001
 }
@@ -10,14 +10,22 @@ function pane() {
     return {
         acted: [],
         sheets: [],
+        rows: [{ n: "sample.jpg", d: false }],
+        cursorIndex: 0,
+        path: "/home/user",
+        rowFor: function (idx) { return this.rows[idx] },
+        join: function (dir, file) { return dir + "/" + file },
         act: function (action) { this.acted.push(action) },
-        sheetMenuAction: function (action) { this.sheets.push(action) }
+        sheetMenuAction: function (action) { this.sheets.push(action) },
+        backend: {
+            convertImage: function () {}
+        }
     }
 }
 
 function run(check) {
-    check("the wheel has Tangerine's six file actions", Wheel.ACTIONS.length, 6)
-    check("sector 0 is at the top", near(Wheel.angleFor(0, 6), Math.PI / 2), true)
+    check("the wheel has root file actions including convert", Wheel.ACTIONS.length, 7)
+    check("sector 0 is at the top", near(Wheel.angleFor(0, 7), Math.PI / 2), true)
     check("sectors run clockwise", near(Wheel.angleFor(1, 6), Math.PI / 2 - Math.PI / 3), true)
     check("a three-way wheel starts at the left", near(Wheel.angleFor(0, 3), Math.PI), true)
     var zero = Wheel.pointAt(10, 0), top = Wheel.pointAt(10, Math.PI / 2)
@@ -32,9 +40,9 @@ function run(check) {
             misses.push(i)
     }
     check("every sector answers its own middle", misses.join(","), "")
-    check("the hub is not a sector", Wheel.indexAt(0, 0, 6), -1)
-    check("the inside edge is not a sector", Wheel.indexAt(Wheel.GEOMETRY.inner - 1, 0, 6), -1)
-    check("the outside edge is not a sector", Wheel.indexAt(Wheel.GEOMETRY.outer + 1, 0, 6), -1)
+    check("the hub is not a sector", Wheel.indexAt(0, 0, 7), -1)
+    check("the inside edge is not a sector", Wheel.indexAt(Wheel.GEOMETRY.inner - 1, 0, 7), -1)
+    check("the outside edge is not a sector", Wheel.indexAt(Wheel.GEOMETRY.outer + 1, 0, 7), -1)
     var boundary = Wheel.angleFor(0, 6) - Math.PI / 6
     var gap = Wheel.pointAt(radius, boundary)
     check("the gap between two petals belongs to neither", Wheel.indexAt(gap.x, gap.y, 6), -1)
@@ -50,19 +58,39 @@ function run(check) {
     check("every petal is a closed SVG path around the wheel's centre", broken.join(","), "")
     check("no two petals draw the same path", paths.filter(function (path, index) { return paths.indexOf(path) !== index }).length, 0)
     check("labels sit between the two rims, above their sector's middle",
-          Wheel.labelPoint(0, 6).y < 0 && Wheel.labelPoint(0, 6).y > -Wheel.GEOMETRY.outer, true)
-    check("the hub names the wheel at rest", Wheel.centerText(-1), "Actions")
-    check("and names the lit action", Wheel.centerText(0), "Copy")
+          Wheel.labelPoint(0, 7).y < 0 && Wheel.labelPoint(0, 7).y > -Wheel.GEOMETRY.outer, true)
+    check("the hub names the wheel at rest", Wheel.centerText(-1, "actions", Wheel.ACTIONS), "Actions")
+    check("and names the lit action", Wheel.centerText(0, "actions", Wheel.ACTIONS), "Copy")
+    check("and names Convert in sub-mode at rest", Wheel.centerText(-1, "convert", []), "Convert")
+
+    // Tangerine conversion matrix checks
+    var jpgFormats = Wheel.conversionFormats("jpg")
+    check("jpg converts to Tangerine image targets excluding itself",
+          jpgFormats.join(","), "png,webp,heic,tiff,avif,bmp,pdf")
+    var mp4Formats = Wheel.conversionFormats("mp4")
+    check("mp4 converts to Tangerine video targets plus gif and mp3",
+          mp4Formats.join(","), "mov,mkv,webm,avi,wmv,gif,mp3")
+    var mp3Formats = Wheel.conversionFormats("mp3")
+    check("mp3 converts to Tangerine audio targets",
+          mp3Formats.join(","), "m4a,wav,flac,ogg,opus,aiff,wma")
+
+    // Sub-entries generation
+    var p = pane()
+    var subItems = Wheel.itemsFor("convert", p)
+    check("convert mode returns format petals for active file", subItems.length, 7)
+    check("first sub-entry is PNG with image glyph", subItems[0].label + ":" + subItems[0].glyph, "PNG:image")
 
     var sink = pane()
     var routes = []
     for (var r = 0; r < Wheel.ACTIONS.length; r++)
         routes.push(Wheel.run(r, sink))
-    check("the six routes are the pane's existing actions", routes.join(","),
-          "copy,moveTo,copyPath,addToShelf,compress:zip,openTerminal")
+    check("the seven routes match pane actions and convert", routes.join(","),
+          "copy,moveTo,copyPath,addToShelf,compress:zip,convert,openTerminal")
     check("copy and the other four go through act()", sink.acted.join(","),
           "copy,moveTo,copyPath,compress:zip,openTerminal")
     check("Shelf goes through the menu's selection snapshot", sink.sheets.join(","), "addToShelf")
+    check("conversion route dispatches convert:<format>",
+          Wheel.run({ id: "convert:png", format: "png" }, sink), "convert:png")
     check("a missing sector runs nothing", Wheel.run(-1, sink), "")
     check("and a missing pane runs nothing", Wheel.run(0, null), "")
 }

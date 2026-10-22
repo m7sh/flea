@@ -30,7 +30,7 @@ output=$( ( env -u DISPLAY -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE \
     timeout 20 qs -p "$test_root/config" 2>&1 ) 2>/dev/null )
 
 # Sample input, the verdict line: "  INFO qml: WHEEL PASS 38 checks, 0 failed"
-expected_checks=38
+expected_checks=47
 if ! printf '%s\n' "$output" | grep -q "WHEEL PASS $expected_checks checks, 0 failed" || printf '%s\n' "$output" | grep -q 'WHEEL FAIL'; then
     printf 'FAIL the action wheel did not draw, hit, route or close as Tangerine does, or made other than %s checks\n' "$expected_checks"
     printf '%s\n' "$output" | grep -aE 'WHEEL (FAIL|PASS)|ERROR|error|TypeError|ReferenceError' | head -30

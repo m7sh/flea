@@ -5,8 +5,9 @@ import QtQuick.Shapes
 import "." as Flea
 import "js/ActionWheel.js" as Wheel
 
-// Tangerine's drag wheel, given Flea's six file actions. The wheel is built on the first open by
-// ui/Pane.qml, so a pane that never asks for it pays for neither the paths nor the labels.
+// Tangerine's drag wheel, given Flea's file actions and format conversion sub-entries.
+// The wheel is built on the first open by ui/Pane.qml, so a pane that never asks for it
+// pays for neither the paths nor the labels.
 Item {
     id: root
     objectName: "actionWheel"
@@ -16,7 +17,9 @@ Item {
     property bool opened: false
     // -1 means the hub is showing; a sector is lit from the pointer or the keyboard.
     property int highlighted: -1
-    readonly property int actionCount: Wheel.ACTIONS.length
+    property string mode: "actions"
+    readonly property var currentItems: Wheel.itemsFor(root.mode, root.pane)
+    readonly property int actionCount: root.currentItems ? root.currentItems.length : 0
     readonly property real inner: Wheel.GEOMETRY.inner
     readonly property real outer: Wheel.GEOMETRY.outer
     readonly property real backdrop: Wheel.GEOMETRY.backdrop
@@ -40,12 +43,13 @@ Item {
         root.wheelY = root.height > margin * 2 ? Math.max(margin, Math.min(root.height - margin, y)) : root.height / 2
     }
 
-    function openAt(scenePoint) {
+    function openAt(scenePoint, initialMode) {
         if (!root.pane) return
         root.focusHolder = root.Window.window ? root.Window.window.activeFocusItem : null
         var at = scenePoint ? root.mapFromItem(null, scenePoint.x, scenePoint.y) : null
         root.placeAt(at)
         root.highlighted = -1
+        root.mode = initialMode === "convert" ? "convert" : "actions"
         root.opened = true
         keyCatcher.forceActiveFocus()
     }
@@ -54,6 +58,7 @@ Item {
         if (!root.opened) return
         root.opened = false
         root.highlighted = -1
+        root.mode = "actions"
         var holder = root.focusHolder && root.focusHolder.visible && root.focusHolder.enabled ? root.focusHolder : null
         if (!holder && root.pane) holder = root.pane.listArea
         if (holder) holder.forceActiveFocus()
@@ -62,6 +67,7 @@ Item {
     }
 
     function step(delta) {
+        if (root.actionCount <= 0) return
         if (root.highlighted < 0)
             root.highlighted = delta > 0 ? 0 : root.actionCount - 1
         else
@@ -70,10 +76,15 @@ Item {
 
     function choose(index) {
         if (index < 0 || index >= root.actionCount) return
-        var action = Wheel.ACTIONS[index]
+        var item = root.currentItems[index]
+        if (item.sub === "convert" || item.id === "convert") {
+            root.mode = "convert"
+            root.highlighted = -1
+            return
+        }
         root.close()
-        Wheel.run(index, root.pane)
-        root.chosen(action.id)
+        Wheel.run(item, root.pane)
+        root.chosen(item.id)
     }
 
     function pointerAt(x, y) {
@@ -132,7 +143,7 @@ Item {
         }
 
         Repeater {
-            model: Wheel.ACTIONS
+            model: root.currentItems
             delegate: Shape {
                 id: petal
                 objectName: "actionWheelPetal"
@@ -159,7 +170,7 @@ Item {
         }
 
         Repeater {
-            model: Wheel.ACTIONS
+            model: root.currentItems
             delegate: Item {
                 id: caption
                 objectName: "actionWheelCaption"
@@ -167,7 +178,7 @@ Item {
                 required property int index
 
                 readonly property point at: Wheel.labelPoint(caption.index, root.actionCount)
-                width: 92
+                width: root.actionCount > 6 ? 80 : 92
                 height: 42
                 x: root.backdrop + caption.at.x - width / 2
                 y: root.backdrop + caption.at.y - height / 2
@@ -182,8 +193,8 @@ Item {
 
                     Flea.Glyph {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 15
-                        height: 15
+                        width: root.actionCount > 6 ? 13 : 15
+                        height: root.actionCount > 6 ? 13 : 15
                         maxSize: 15
                         name: caption.modelData.glyph
                         color: caption.index === root.highlighted ? Theme.color.background : Theme.color.foreground
@@ -191,13 +202,13 @@ Item {
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 92
+                        width: root.actionCount > 6 ? 78 : 92
                         text: caption.modelData.label
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
                         color: caption.index === root.highlighted ? Theme.color.background : Theme.color.foreground
                         font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySmall
+                        font.pixelSize: root.actionCount > 6 ? Math.max(9, Theme.font.caption) : Theme.font.bodySmall
                         font.weight: Font.DemiBold
                     }
                 }
@@ -224,7 +235,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 82
-                    text: Wheel.centerText(root.highlighted)
+                    text: Wheel.centerText(root.highlighted, root.mode, root.currentItems)
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                     color: root.highlighted >= 0 ? Theme.color.accent : Theme.color.foreground
@@ -235,10 +246,21 @@ Item {
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: root.highlighted >= 0 ? "Enter to run" : root.actionCount + " file actions"
+                    text: Wheel.centerSubText(root.highlighted, root.mode, root.currentItems)
                     color: Theme.color.muted
                     font.family: Theme.font.family
                     font.pixelSize: Math.max(8, Theme.font.caption - 2)
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: root.mode !== "actions" ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: {
+                    if (root.mode !== "actions") {
+                        root.mode = "actions"
+                        root.highlighted = -1
+                    }
                 }
             }
         }
@@ -255,7 +277,15 @@ Item {
             onExited: root.highlighted = -1
             onClicked: function (mouse) {
                 var index = Wheel.indexAt(mouse.x - root.backdrop, mouse.y - root.backdrop, root.actionCount)
-                if (index >= 0) root.choose(index)
+                if (index >= 0) {
+                    root.choose(index)
+                } else if (root.mode !== "actions") {
+                    var r = Math.hypot(mouse.x - root.backdrop, mouse.y - root.backdrop)
+                    if (r < root.inner) {
+                        root.mode = "actions"
+                        root.highlighted = -1
+                    }
+                }
             }
         }
     }
@@ -269,10 +299,26 @@ Item {
         focus: true
 
         Keys.onPressed: function (event) {
-            if (event.key === Qt.Key_Escape) root.close()
-            else if (event.key === Qt.Key_Left || event.key === Qt.Key_Up || event.text === "h" || event.text === "k") root.step(-1)
-            else if (event.key === Qt.Key_Right || event.key === Qt.Key_Down || event.text === "l" || event.text === "j") root.step(1)
-            else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            if (event.key === Qt.Key_Escape) {
+                if (root.mode !== "actions") {
+                    root.mode = "actions"
+                    root.highlighted = -1
+                } else {
+                    root.close()
+                }
+            } else if (event.key === Qt.Key_Backspace) {
+                if (root.mode !== "actions") {
+                    root.mode = "actions"
+                    root.highlighted = -1
+                }
+            } else if (event.key === Qt.Key_Tab || event.text === "c") {
+                root.mode = root.mode === "convert" ? "actions" : "convert"
+                root.highlighted = -1
+            } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Up || event.text === "h" || event.text === "k") {
+                root.step(-1)
+            } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Down || event.text === "l" || event.text === "j") {
+                root.step(1)
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                 if (root.highlighted < 0) root.highlighted = 0
                 else root.choose(root.highlighted)
             }

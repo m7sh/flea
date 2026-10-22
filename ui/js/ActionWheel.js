@@ -1,8 +1,9 @@
 .pragma library
 
-// Tangerine's drag wheel, ported to Flea's own actions. The geometry is the landing page's
-// (assets/home-*.js): one annulus of equal petals, sector 0 at the top, clockwise, a small angular
-// gap between neighbours, and rounded corners cut into the SVG path rather than into the hit test.
+// Tangerine's drag wheel, ported to Flea with dynamic format conversion sub-entries.
+// The geometry is the landing page's (assets/home-*.js): one annulus of equal petals,
+// sector 0 at the top, clockwise, an angular gap between neighbours, and rounded corners
+// cut into the SVG path rather than into the hit test.
 var GEOMETRY = {
     inner: 48.64,
     outer: 119.52,
@@ -12,16 +13,115 @@ var GEOMETRY = {
     labelInner: 40
 }
 
-// The six actions Tangerine's file wheel stands for. "Shelf" is Flea's staging tray; the other
-// five are the listing's own routes, so the wheel adds an entrance and never a second implementation.
+// Tangerine's format categories and conversion targets, extracted from Tangerine's production bundle.
+var IMAGES = ["jpg", "jpeg", "png", "webp", "heic", "tiff", "svg", "avif", "bmp"]
+var IMAGE_TARGETS = ["jpg", "png", "webp", "heic", "tiff", "avif", "bmp", "pdf"]
+var AUDIO = ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"]
+var VIDEO = ["mp4", "mov", "mkv", "webm", "avi", "wmv"]
+var SUBTITLES = ["srt", "vtt"]
+var DOCS = ["docx", "pages", "md", "rtf", "rtfd", "textClipping"]
+var SPREADSHEETS = ["xlsx", "xls", "ods", "csv", "tsv"]
+var DOC_TARGETS = ["docx", "pages", "pdf", "txt", "md", "html", "epub", "png", "jpg"]
+var INPUT_ONLY = ["rar", "ppt", "xls", "rtf", "rtfd", "textClipping"]
+
+// The seven root actions: six file actions plus Convert, which opens format sub-entries.
 var ACTIONS = [
     { id: "copy", label: "Copy", glyph: "copy" },
     { id: "move", label: "Move to", glyph: "move-horizontal" },
     { id: "path", label: "Copy path", glyph: "file-text" },
     { id: "shelf", label: "Shelf", glyph: "shelf" },
     { id: "compress", label: "Compress", glyph: "archive" },
+    { id: "convert", label: "Convert", glyph: "sliders", sub: "convert" },
     { id: "terminal", label: "Terminal", glyph: "terminal" }
 ]
+
+function normalizeExt(ext) {
+    var e = String(ext || "").toLowerCase().replace(/^\./, "")
+    return e === "jpeg" ? "jpg" : e
+}
+
+function extensionOf(name) {
+    var cut = String(name || "").lastIndexOf(".")
+    return cut > 0 ? String(name).substring(cut + 1).toLowerCase() : ""
+}
+
+// Tangerine's z(e): returns available conversion formats for the given extension.
+function conversionFormats(ext) {
+    var e = normalizeExt(ext)
+    var t = []
+    if (IMAGES.indexOf(e) >= 0) t = IMAGE_TARGETS
+    else if (AUDIO.indexOf(e) >= 0) t = AUDIO
+    else if (VIDEO.indexOf(e) >= 0) t = VIDEO.concat(["gif", "mp3"])
+    else if (e === "gif") t = VIDEO
+    else if (e === "pdf") t = ["docx", "pages", "pptx", "xlsx", "jpg", "png", "epub", "txt", "md"]
+    else if (e === "ppt" || e === "pptx") t = ["pdf", "jpg", "png"]
+    else if (SPREADSHEETS.indexOf(e) >= 0) t = SPREADSHEETS.concat(["pdf"])
+    else if (DOCS.indexOf(e) >= 0) t = DOC_TARGETS
+    else if (e === "epub") t = ["pdf", "docx", "pages", "txt", "md", "html"]
+    else if (e === "txt") t = ["docx", "pages", "pdf", "md", "html", "epub", "jpg", "png"]
+    else if (SUBTITLES.indexOf(e) >= 0) t = SUBTITLES.concat(["txt"])
+    else if (["zip", "tar", "gz", "rar"].indexOf(e) >= 0) t = ["zip", "tar", "gz"]
+    else return []
+
+    var res = []
+    for (var i = 0; i < t.length; i++) {
+        var fmt = t[i]
+        if (fmt !== e && INPUT_ONLY.indexOf(fmt) < 0 && res.indexOf(fmt) < 0)
+            res.push(fmt)
+    }
+    return res
+}
+
+var LABELS = {
+    jpg: "JPEG", png: "PNG", webp: "WebP", heic: "HEIC", tiff: "TIFF",
+    avif: "AVIF", bmp: "BMP", pdf: "PDF", mp3: "MP3", m4a: "M4A",
+    wav: "WAV", flac: "FLAC", ogg: "OGG", opus: "Opus", aiff: "AIFF",
+    wma: "WMA", mp4: "MP4", mov: "MOV", mkv: "MKV", webm: "WebM",
+    avi: "AVI", wmv: "WMV", gif: "GIF", docx: "DOCX", pages: "Pages",
+    pptx: "PPTX", xlsx: "XLSX", epub: "EPUB", txt: "TXT", md: "Markdown",
+    html: "HTML", srt: "SRT", vtt: "VTT", zip: "ZIP", tar: "TAR", gz: "GZIP"
+}
+
+function formatLabel(fmt) {
+    return LABELS[fmt] || String(fmt).toUpperCase()
+}
+
+function formatGlyph(fmt) {
+    if (IMAGES.indexOf(fmt) >= 0) return "image"
+    if (AUDIO.indexOf(fmt) >= 0) return "music"
+    if (VIDEO.indexOf(fmt) >= 0 || fmt === "gif") return "film"
+    if (["zip", "tar", "gz", "rar"].indexOf(fmt) >= 0) return "archive"
+    return "file-text"
+}
+
+function activeExtension(pane) {
+    if (!pane || !pane.rows) return ""
+    var idx = pane.cursorIndex !== undefined ? pane.cursorIndex : 0
+    var row = pane.rowFor ? pane.rowFor(idx) : null
+    if (!row || row.d) return ""
+    return extensionOf(row.n)
+}
+
+function itemsFor(mode, pane) {
+    if (mode === "convert") {
+        var ext = activeExtension(pane)
+        var fmts = conversionFormats(ext)
+        if (fmts.length === 0)
+            fmts = ["png", "jpg", "webp", "pdf"]
+        var items = []
+        for (var i = 0; i < fmts.length; i++) {
+            var f = fmts[i]
+            items.push({
+                id: "convert:" + f,
+                format: f,
+                label: formatLabel(f),
+                glyph: formatGlyph(f)
+            })
+        }
+        return items
+    }
+    return ACTIONS
+}
 
 // The middle of a sector, in math coordinates: positive y is up, and sector 0 is at the top.
 function angleFor(index, count) {
@@ -32,14 +132,10 @@ function pointAt(radius, angle) {
     return { x: Math.cos(angle) * radius, y: -Math.sin(angle) * radius }
 }
 
-// Half the angular width the drawn gap takes at this radius; used by both the path and the hit test,
-// so a click through a visible gap cannot open either neighbour.
 function gapAngle(radius) {
     return Math.asin(Math.min(0.95, GEOMETRY.gap / 2 / Math.max(radius, GEOMETRY.gap / 2 + 0.01)))
 }
 
-// An annulus sector as an SVG path, in the same rounded shape Tangerine draws. cx/cy move the
-// path's origin to the centre of the QML item that paints it.
 function sectorPath(index, count, cx, cy) {
     var geometry = GEOMETRY
     var middle = angleFor(index, count)
@@ -78,8 +174,6 @@ function sectorPath(index, count, cx, cy) {
         + " Z"
 }
 
-// The sector under a point measured from the wheel's centre, or -1 in the hub, outside the rim and
-// in a gap. This is Tangerine's Ke(): nearest sector first, then the gap that belongs to neither.
 function indexAt(x, y, count) {
     if (!count || count < 1) return -1
     var radius = Math.hypot(x, y)
@@ -94,27 +188,47 @@ function indexAt(x, y, count) {
     return off > step / 2 - Math.asin(GEOMETRY.gap / 2 / radius) ? -1 : index
 }
 
-// Where a petal's caption sits. Tangerine labels at labelInner + 56% of the annulus, not at its middle.
 function labelPoint(index, count) {
     var radius = GEOMETRY.labelInner + (GEOMETRY.outer - GEOMETRY.labelInner) * 0.56
     return pointAt(radius, angleFor(index, count))
 }
 
-// The label in the hub: the wheel's name until a petal is chosen, then that petal's own.
-function centerText(index) {
-    return index >= 0 && index < ACTIONS.length ? ACTIONS[index].label : "Actions"
+function centerText(index, mode, items) {
+    var list = items || ACTIONS
+    if (index >= 0 && index < list.length)
+        return list[index].label
+    return mode === "convert" ? "Convert" : "Actions"
 }
 
-// One route per petal, all through the pane's existing actions. Returning the route lets
-// tests/js/wheel.js hold the table to the same calls without a Pane.
-function run(index, pane) {
-    var action = ACTIONS[index]
+function centerSubText(index, mode, items) {
+    var list = items || ACTIONS
+    if (index >= 0 && index < list.length) {
+        if (mode === "convert") return "Enter to convert"
+        return list[index].sub ? "Enter for options" : "Enter to run"
+    }
+    if (mode === "convert") return "Esc to go back"
+    return list.length + " file actions"
+}
+
+function run(actionOrIndex, pane) {
+    var action = typeof actionOrIndex === "number" ? ACTIONS[actionOrIndex] : actionOrIndex
     if (!action || !pane) return ""
     if (action.id === "shelf") {
-        // Shelf is client-side, but the snapshot route resolves the whole selection (including rows
-        // outside the held window) before PaneMenuActions.shelve sees it.
         pane.sheetMenuAction("addToShelf")
         return "addToShelf"
+    }
+    if (action.id === "convert" || action.sub === "convert") {
+        return "convert"
+    }
+    if (action.id && action.id.indexOf("convert:") === 0) {
+        var format = action.format || action.id.substring(8)
+        var row = pane.rowFor ? pane.rowFor(pane.cursorIndex) : null
+        var fullPath = row && row.n ? (pane.join ? pane.join(pane.path, row.n) : row.n) : ""
+        var dest = fullPath ? fullPath.replace(/(?:\.[^.]+)?$/, " (converted)." + format) : ""
+        if (fullPath && pane.backend && pane.backend.convertImage) {
+            pane.backend.convertImage(fullPath, dest, false, 0, 0, false)
+        }
+        return "convert:" + format
     }
     var route = action.id === "move" ? "moveTo"
               : action.id === "path" ? "copyPath"

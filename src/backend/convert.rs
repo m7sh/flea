@@ -48,6 +48,10 @@ pub fn argv(input: &Path, dest: &Path, strip: bool) -> Vec<String> {
         if strip {
             a.push("-map_metadata".to_string());
             a.push("-1".to_string());
+            a.push("-map_metadata:s".to_string());
+            a.push("-1".to_string());
+            a.push("-map_chapters".to_string());
+            a.push("-1".to_string());
         }
         a.push(dest.to_string_lossy().to_string());
         a
@@ -83,7 +87,13 @@ mod tests {
             let audio = argv(Path::new("/x/a.mp4"), Path::new("/x/a.mp3"), false);
             assert_eq!(audio, vec!["ffmpeg", "-y", "-i", "/x/a.mp4", "/x/a.mp3"]);
             let stripped = argv(Path::new("/x/a.mov"), Path::new("/x/a.mp4"), true);
-            assert_eq!(stripped, vec!["ffmpeg", "-y", "-i", "/x/a.mov", "-map_metadata", "-1", "/x/a.mp4"]);
+            assert_eq!(stripped, vec![
+                "ffmpeg", "-y", "-i", "/x/a.mov",
+                "-map_metadata", "-1",
+                "-map_metadata:s", "-1",
+                "-map_chapters", "-1",
+                "/x/a.mp4",
+            ]);
         }
     }
 
